@@ -1,36 +1,25 @@
-# Steps for restoring project cache
-
 steps:
-  - task: DownloadBuildArtifacts@0
-    condition: and(succeeded(), ne(variables['Build.SourceBranch'], 'refs/heads/master'))
-    displayName: '[Cache][Restore] Restore install'
-    inputs:
-        buildType: 'specific'
-        project: '$(System.TeamProject)'
-        pipeline: '$(Build.DefinitionName)'
-        branchName: 'refs/heads/master'
-        buildVersionToDownload: 'latestFromBranch'
-        downloadType: 'single'
-        artifactName: 'cache-$(Agent.OS)-install'
-        downloadPath: '$(STAGING_DIRECTORY)'
-    continueOnError: true
+- bash: |
+    # COMPUTE THE ESY INSTALL CACHE LOCATION AHEAD OF TIME
+    DESIRED_LEN="86"
+    HOME_ESY3="$HOME/.esy/3"
+    HOME_ESY3_LEN=${#HOME_ESY3}
+    NUM_UNDERS=$(echo "$(($DESIRED_LEN-$HOME_ESY3_LEN))")
+    UNDERS=$(printf "%-${NUM_UNDERS}s" "_")
+    UNDERS="${UNDERS// /_}"
+    THE_ESY__CACHE_INSTALL_PATH=${HOME_ESY3}${UNDERS}/i
+    if [ "$AGENT_OS" == "Windows_NT" ]; then
+      THE_ESY__CACHE_INSTALL_PATH=$( cygpath --mixed --absolute "$THE_ESY__CACHE_INSTALL_PATH")
+    fi
+    echo "THE_ESY__CACHE_INSTALL_PATH: $THE_ESY__CACHE_INSTALL_PATH"
+    # This will be exposed as an env var ESY__CACHE_INSTALL_PATH, or an
+    # Azure var esy__cache_install_path
+    echo "##vso[task.setvariable variable=esy__cache_install_path]$THE_ESY__CACHE_INSTALL_PATH"
+  displayName: '[Cache] calculate esy store path'
 
-  - bash: 'mkdir -p $(ESY__CACHE_INSTALL_PATH)'
-    condition: and(succeeded(), ne(variables['Build.SourceBranch'], 'refs/heads/master'))
-    displayName: '[Cache][Restore] Create cache directory'
+- task: Cache@2
+  displayName: Restore build cache
+  inputs:
+    key: 'key1 | "$(Agent.OS)" | esy.lock/index.json'
+    path: $(ESY__CACHE_INSTALL_PATH)
 
-  # - bash: 'cd $(ESY__NPM_ROOT) && tar -xf $(STAGING_DIRECTORY_UNIX)/cache-$(Agent.OS)-install/npm-cache.tar -C .'
-  #   continueOnError: true
-  #   condition: and(succeeded(), ne(variables['Build.SourceBranch'], 'refs/heads/master'))
-  #   displayName: '[Cache][Restore] Untar npm cache directory'
-
-  - bash: 'cd $(ESY__CACHE_INSTALL_PATH) && tar -xf $(STAGING_DIRECTORY_UNIX)/cache-$(Agent.OS)-install/esy-cache.tar -C .'
-    continueOnError: true
-    condition: and(succeeded(), ne(variables['Build.SourceBranch'], 'refs/heads/master'))
-    displayName: '[Cache][Restore] Untar esy cache directory'
-
-  - bash: 'rm -rf *'
-    continueOnError: true
-    workingDirectory: '$(STAGING_DIRECTORY)'
-    condition: and(succeeded(), ne(variables['Build.SourceBranch'], 'refs/heads/master'))
-    displayName: '[Cache][Restore] Clean up'
